@@ -1,0 +1,14 @@
+{
+  "name": "openclaw-guardian",
+  "version": "1.0.0",
+  "description": "Rate-limit aware proxy + session healer for OpenClaw / Anthropic API",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start":  "node bin/start.js",
+    "proxy":  "node bin/proxy.js",
+    "healer": "node bin/healer.js",
+    "once":   "node bin/healer.js --once"
+  },
+  "dependencies": {}
+}
