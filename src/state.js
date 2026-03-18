@@ -8,8 +8,8 @@ import { config } from './config.js';
 const PATH = config.sharedStatePath;
 
 export const state = {
-  remainingRequests: Infinity,
-  remainingTokens:   Infinity,
+  remainingRequests: -1,
+  remainingTokens: -1,
   resetTimestamp:    0,
   cooldown:          false,
   queueLength:       0,
