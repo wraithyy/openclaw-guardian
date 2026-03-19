@@ -2,7 +2,7 @@
  * queue.js – FIFO async queue with concurrency limit + rate-limit throttle.
  */
 import { config } from './config.js';
-import { state }  from './state.js';
+import { state, getState, updateState } from './state.js';
 import { logger } from './logger.js';
 
 const MAX = config.proxy.maxConcurrency;
@@ -15,7 +15,7 @@ const q = [];
 export function enqueue(task) {
   return new Promise((resolve, reject) => {
     q.push({ task, resolve, reject });
-    state.update({ queueLength: q.length });
+    updateState({ queueLength: q.length });
     _drain();
   });
 }
@@ -24,7 +24,7 @@ export function queueLength() { return q.length; }
 
 function _drain() {
   if (running >= MAX || q.length === 0) return;
-  const s = state.get();
+  const s = getState();
   if (s.cooldown) {
     const until = s.cooldownUntil ? new Date(s.cooldownUntil).getTime() : Date.now() + 2000;
     const wait  = Math.max(until - Date.now(), 500);
@@ -33,7 +33,7 @@ function _drain() {
     return;
   }
   const { task, resolve, reject } = q.shift();
-  state.update({ queueLength: q.length });
+  updateState({ queueLength: q.length });
   running++;
   _throttle()
     .then(() => task())
@@ -43,7 +43,7 @@ function _drain() {
 }
 
 async function _throttle() {
-  const s   = state.get();
+  const s   = getState();
   const rem = s.remainingRequests;
   if (rem === null) return; // no info yet
 
@@ -52,17 +52,17 @@ async function _throttle() {
   if (rem <= 0 || s.cooldown) {
     const w = Math.max(until - Date.now(), 1000);
     logger.warn('Hard block – no requests remaining', { waitMs: w });
-    state.update({ totalThrottles: (s.totalThrottles ?? 0) + 1 });
+    updateState({ totalThrottles: (s.totalThrottles ?? 0) + 1 });
     await sleep(w);
   } else if (rem < pauseThreshold) {
     const w = Math.max(until - Date.now(), 500);
     logger.warn('Pause until reset', { rem, waitMs: w });
-    state.update({ totalThrottles: (s.totalThrottles ?? 0) + 1 });
+    updateState({ totalThrottles: (s.totalThrottles ?? 0) + 1 });
     await sleep(w);
   } else if (rem < warnThreshold) {
     const d = Math.floor(Math.random() * (delayMax - delayMin) + delayMin);
     logger.info('Throttle delay', { rem, delayMs: d });
-    state.update({ totalThrottles: (s.totalThrottles ?? 0) + 1 });
+    updateState({ totalThrottles: (s.totalThrottles ?? 0) + 1 });
     await sleep(d);
   }
 }

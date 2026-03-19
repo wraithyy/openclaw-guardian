@@ -32,6 +32,15 @@ const DEFAULTS = {
   },
   // Shared state file (proxy writes, healer reads)
   sharedStatePath: join(homedir(), '.openclaw', 'guardian.state.json'),
+  // Grafana Cloud push (optional)
+  grafana: {
+    enabled:       false,
+    mimirUrl:      '',   // e.g. https://prometheus-prod-XX.grafana.net/api/prom/push
+    lokiUrl:       '',   // e.g. https://logs-prod-XX.grafana.net/loki/api/v1/push
+    user:          '',   // numeric Grafana Cloud user ID
+    token:         '',   // Grafana Cloud API token
+    pushIntervalMs: 15_000,
+  },
   // Log
   logPath: join(homedir(), '.openclaw', 'guardian.log'),
   logLevel: 'info',  // info | warn | error

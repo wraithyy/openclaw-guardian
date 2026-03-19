@@ -13,7 +13,7 @@ Runs on Raspberry Pi. Zero external dependencies. Node 22+.
 - Reads `anthropic-ratelimit-*` response headers
 - Throttles/queues requests before hitting 429
 - Enters cooldown mode on 429, retries once with backoff
-- Exposes `/metrics` (Prometheus) and `/_health` (JSON)
+- Exposes `/_guardian/metrics` (Prometheus text) and `/_guardian/health` (JSON)
 
 ### Healer (`src/healer.js`)
 - Scans `~/.openclaw/agents/**/sessions/*.jsonl`
@@ -23,8 +23,8 @@ Runs on Raspberry Pi. Zero external dependencies. Node 22+.
 - Skips session writes when proxy is in cooldown
 
 ### Grafana integration
-- Prometheus `/metrics` endpoint — scrape with Grafana Agent or Alloy
-- Optional push to **Grafana Cloud Mimir** (metrics) + **Loki** (logs)
+- Prometheus `/_guardian/metrics` endpoint — scrape with Grafana Agent or Alloy
+- Optional push to **Grafana Cloud Mimir** (metrics via remote_write) + **Loki** (logs)
 
 ---
 
@@ -67,10 +67,10 @@ Edit it to taste:
   },
   "grafana": {
     "enabled": false,
-    "mimirUrl":  "https://prometheus-prod-XX.grafana.net/api/prom/push",
-    "lokiUrl":   "https://logs-prod-XX.grafana.net/loki/api/v1/push",
-    "user":      "123456",
-    "token":     "glc_...",
+    "mimirUrl":      "https://prometheus-prod-XX.grafana.net/api/prom/push",
+    "lokiUrl":       "https://logs-prod-XX.grafana.net/loki/api/v1/push",
+    "user":          "123456",
+    "token":         "glc_...",
     "pushIntervalMs": 15000
   },
   "sharedStatePath": "~/.openclaw/guardian.state.json",
@@ -83,13 +83,16 @@ Edit it to taste:
 
 In `~/.openclaw/openclaw.json`, override the Anthropic base URL:
 
-```json5
+```json
 {
-  agents: {
-    defaults: {
-      models: {
+  "agents": {
+    "defaults": {
+      "models": {
         "anthropic/claude-sonnet-4-6": {
-          params: { baseUrl: "http://127.0.0.1:4747" }
+          "params": { "baseUrl": "http://127.0.0.1:4747" }
+        },
+        "anthropic/claude-haiku-4-5": {
+          "params": { "baseUrl": "http://127.0.0.1:4747" }
         }
       }
     }
@@ -103,7 +106,7 @@ In `~/.openclaw/openclaw.json`, override the Anthropic base URL:
 ### 4. Run
 
 ```bash
-# Both proxy + healer
+# Both proxy + healer (+ Grafana exporter if enabled)
 npm start
 
 # Proxy only
@@ -148,12 +151,12 @@ sudo systemctl enable --now openclaw-guardian
 ### Prometheus scrape
 
 ```yaml
-# prometheus.yml / Alloy config
+# prometheus.yml / Alloy / Grafana Agent config
 scrape_configs:
   - job_name: openclaw-guardian
     static_configs:
       - targets: ['127.0.0.1:4747']
-    metrics_path: /metrics
+    metrics_path: /_guardian/metrics
 ```
 
 ### Available metrics
@@ -164,20 +167,26 @@ scrape_configs:
 | `guardian_remaining_tokens` | gauge | Tokens left in current window |
 | `guardian_cooldown` | gauge | 1 = in cooldown, 0 = normal |
 | `guardian_queue_length` | gauge | Pending requests in queue |
-| `guardian_total_requests` | counter | Total forwarded requests |
-| `guardian_total_throttles` | counter | Times throttle was applied |
-| `guardian_total_429s` | counter | Times 429 was received |
-| `guardian_sessions_scanned` | gauge | Files scanned in last pass |
-| `guardian_sessions_repaired` | counter | Sessions successfully repaired |
-| `guardian_sessions_deleted` | counter | Sessions deleted (unrepairable) |
-| `guardian_stale_locks_removed` | counter | Stale lock files removed |
 | `guardian_at_risk` | gauge | 1 = healer paused due to cooldown |
-| `guardian_scan_runs` | counter | Total healer scan runs |
+| `guardian_sessions_scanned` | gauge | Files scanned in last healer pass |
+| `guardian_requests_total` | counter | Total forwarded requests |
+| `guardian_throttles_total` | counter | Times throttle delay was applied |
+| `guardian_429s_total` | counter | Times 429 received from Anthropic |
+| `guardian_sessions_repaired_total` | counter | Sessions successfully repaired |
+| `guardian_sessions_deleted_total` | counter | Sessions deleted (unrepairable) |
+| `guardian_stale_locks_removed_total` | counter | Stale lock files removed |
+| `guardian_scan_runs_total` | counter | Total healer scan runs |
 
 ### Grafana Cloud push
 
-Set `grafana.enabled: true` in config and fill in your Mimir + Loki URLs,
-user ID, and API token. The exporter pushes every `pushIntervalMs` ms.
+Set `grafana.enabled: true` in `~/.openclaw/guardian.config.json` and fill in
+your Mimir + Loki URLs, numeric user ID, and API token.
+
+Metrics are pushed via **Prometheus remote_write** (protobuf + snappy, no external deps).
+Logs are pushed via **Loki JSON API**.
+
+The exporter runs every `pushIntervalMs` ms (default 15 s) when `npm start` is used.
+The push is a no-op when `grafana.enabled` is `false`.
 
 ---
 
@@ -188,6 +197,7 @@ user ID, and API token. The exporter pushes every `pushIntervalMs` ms.
 | OpenClaw still hits 429 | Verify `baseUrl` is pointing to `http://127.0.0.1:4747` |
 | Healer not finding sessions | Check `sessionDirs` in config matches your actual path |
 | Proxy not starting | Check port 4747 isn't in use: `lsof -i :4747` |
+| Metrics endpoint returns nothing | Verify guardian is running: `curl http://127.0.0.1:4747/_guardian/health` |
 | Grafana push fails | Verify user/token and URLs; check `guardian.log` |
 | Sessions deleted unexpectedly | Set `archiveCorrupted: true` to rename instead of delete |
 
@@ -198,6 +208,6 @@ user ID, and API token. The exporter pushes every `pushIntervalMs` ms.
 Structured JSON logs at `~/.openclaw/guardian.log`:
 
 ```json
-{"ts":"2026-03-18T14:00:00.000Z","level":"warn","component":"proxy","message":"Received 429 from Anthropic","attempt":0}
-{"ts":"2026-03-18T14:00:05.000Z","level":"warn","component":"healer","message":"Corruption detected","file":"...","issues":["unmatched_tool_use"]}
+{"ts":"2026-03-18T14:00:00.000Z","level":"warn","message":"429 from Anthropic","attempt":0,"url":"/v1/messages"}
+{"ts":"2026-03-18T14:00:05.000Z","level":"warn","message":"Orphaned tool_use – removing","filePath":"...","orphaned":["toolu_01..."]}
 ```

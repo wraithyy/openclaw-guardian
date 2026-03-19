@@ -16,6 +16,7 @@ import { join } from 'path';
 import { config }             from './config.js';
 import { logger }             from './logger.js';
 import { readPersistedState } from './state.js';
+import { healerMetrics }      from './metrics.js';
 
 const MAX_SIZE   = config.healer.maxFileSizeBytes;
 const STALE_LOCK = config.healer.staleLockMinutes * 60 * 1000;
@@ -31,6 +32,7 @@ export async function runOnce() {
     logger.warn('Healer: proxy in cooldown – skipping repairs');
   }
 
+  let scanned = 0;
   for (const baseDir of config.healer.sessionDirs) {
     if (!existsSync(baseDir)) continue;
     const files = findFiles(baseDir);
@@ -41,6 +43,7 @@ export async function runOnce() {
         continue;
       }
       if (!file.endsWith('.jsonl')) continue;
+      scanned++;
       if (inCooldown) {
         logger.info('Cooldown – skip', { file });
         continue;
@@ -48,6 +51,9 @@ export async function runOnce() {
       healFile(file);
     }
   }
+
+  healerMetrics.sessionsScanned = scanned;
+  healerMetrics.scanRuns++;
 }
 
 export function startDaemon() {
@@ -78,6 +84,7 @@ function handleLock(lockPath) {
     const age = Date.now() - statSync(lockPath).mtimeMs;
     if (age > STALE_LOCK) {
       unlinkSync(lockPath);
+      healerMetrics.staleLocksRemoved++;
       logger.warn('Removed stale lock', { lockPath, ageMs: age });
     }
   } catch (e) {
@@ -112,6 +119,7 @@ function healFile(filePath) {
 
   try {
     writeFileSync(filePath, valid.join('\n') + '\n');
+    healerMetrics.sessionsRepaired++;
     logger.info('Repaired', { filePath, before: lines.length, after: valid.length });
   } catch (e) {
     logger.error('Write failed', { filePath, error: e.message });
@@ -149,15 +157,24 @@ function repairLines(lines, filePath) {
   if (orphaned.length === 0) return { valid, changed };
 
   logger.warn('Orphaned tool_use – removing', { filePath, orphaned });
-  const cleaned = valid.filter((line) => {
+  const cleaned = valid.map((line) => {
     try {
       const e = JSON.parse(line);
-      const content = Array.isArray(e.content) ? e.content : [];
-      const bad = content.some((b) => b?.type === 'tool_use' && orphaned.includes(b.id))
-               || (e.type === 'tool_use' && orphaned.includes(e.id));
-      return !bad;
-    } catch { return false; }
-  });
+      // Whole message is an orphaned tool_use → drop entire line
+      if (e.type === 'tool_use' && orphaned.includes(e.id)) return null;
+      // Message contains orphaned blocks in content array → filter them out
+      if (Array.isArray(e.content)) {
+        const filtered = e.content.filter(
+          (b) => !(b?.type === 'tool_use' && orphaned.includes(b.id))
+        );
+        if (filtered.length !== e.content.length) {
+          e.content = filtered;
+          return JSON.stringify(e);
+        }
+      }
+      return line;
+    } catch { return null; }
+  }).filter(Boolean);
   return { valid: cleaned, changed: true };
 }
 
@@ -170,6 +187,7 @@ function drop(filePath) {
       unlinkSync(filePath);
       logger.info('Deleted', { filePath });
     }
+    healerMetrics.sessionsDeleted++;
   } catch (e) {
     logger.error('Delete failed', { filePath, error: e.message });
   }

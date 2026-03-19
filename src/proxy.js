@@ -6,8 +6,9 @@ import { request as httpsReq } from 'https';
 import { URL }                 from 'url';
 import { config }              from './config.js';
 import { logger }              from './logger.js';
-import { state, updateRateLimitHeaders, enterCooldown, exitCooldown } from './state.js';
+import { state, updateState, updateRateLimitHeaders, enterCooldown, exitCooldown } from './state.js';
 import { enqueue }             from './queue.js';
+import { renderPrometheus }    from './metrics.js';
 
 const pcfg     = config.proxy;
 const UPSTREAM = new URL(pcfg.upstreamBase);
@@ -15,15 +16,8 @@ const UPSTREAM = new URL(pcfg.upstreamBase);
 export function startProxy() {
   const server = createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/_guardian/metrics') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({
-        remainingRequests: state.remainingRequests,
-        remainingTokens:   state.remainingTokens,
-        resetTimestamp:    state.resetTimestamp,
-        cooldown:          state.cooldown,
-        queueLength:       state.queueLength,
-        updatedAt:         state.updatedAt,
-      }));
+      res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
+      return res.end(renderPrometheus());
     }
     if (req.method === 'GET' && req.url === '/_guardian/health') {
       res.writeHead(state.cooldown ? 503 : 200, { 'Content-Type': 'application/json' });
@@ -48,6 +42,7 @@ export function startProxy() {
 }
 
 async function handleRequest(req, res, attempt = 0) {
+  if (attempt === 0) updateState({ totalRequests: state.totalRequests + 1 });
   const body = await collectBody(req);
   return doForward(req, res, body, attempt);
 }
@@ -67,6 +62,7 @@ function doForward(origReq, res, body, attempt) {
 
       if (pRes.statusCode === 429) {
         logger.warn('429 from Anthropic', { attempt, url: origReq.url });
+        updateState({ total429s: state.total429s + 1 });
         enterCooldown();
         pRes.resume();
         if (attempt < pcfg.maxRetries) {

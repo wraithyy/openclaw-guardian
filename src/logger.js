@@ -7,11 +7,16 @@ import { config } from './config.js';
 
 const LEVELS = { error: 0, warn: 1, info: 2 };
 
+let _sink = null;
+export function setLogSink(fn) { _sink = fn; }
+
 function log(level, msg, extra = {}) {
   if ((LEVELS[level] ?? 2) > (LEVELS[config.logLevel] ?? 2)) return;
-  const entry = JSON.stringify({ ts: new Date().toISOString(), level, message: msg, ...extra });
-  try { mkdirSync(dirname(config.logPath), { recursive: true }); appendFileSync(config.logPath, entry + '\n'); } catch (_) {}
-  process.stderr.write(entry + '\n');
+  const entry = { ts: new Date().toISOString(), level, message: msg, ...extra };
+  const line  = JSON.stringify(entry);
+  try { mkdirSync(dirname(config.logPath), { recursive: true }); appendFileSync(config.logPath, line + '\n'); } catch (_) {}
+  process.stderr.write(line + '\n');
+  if (_sink) try { _sink(entry); } catch (_) {}
 }
 
 export const logger = {

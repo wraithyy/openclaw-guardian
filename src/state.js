@@ -8,11 +8,15 @@ import { config } from './config.js';
 const PATH = config.sharedStatePath;
 
 export const state = {
-  remainingRequests: -1,
-  remainingTokens: -1,
-  resetTimestamp:    0,
+  remainingRequests: null,
+  remainingTokens:   null,
+  resetTimestamp:    null,
   cooldown:          false,
+  cooldownUntil:     null,
   queueLength:       0,
+  totalRequests:     0,
+  totalThrottles:    0,
+  total429s:         0,
   updatedAt:         Date.now(),
 };
 
@@ -35,7 +39,8 @@ export function enterCooldown() {
   state.updatedAt = Date.now();
   persist();
   if (cooldownTimer) clearTimeout(cooldownTimer);
-  const delay = Math.max(state.resetTimestamp - Date.now(), 1000);
+  const resetTs = state.resetTimestamp ? state.resetTimestamp : Date.now() + 30_000;
+  const delay = Math.max(resetTs - Date.now(), 1000);
   cooldownTimer = setTimeout(exitCooldown, delay);
 }
 
@@ -50,6 +55,15 @@ function persist() {
     mkdirSync(dirname(PATH), { recursive: true });
     writeFileSync(PATH, JSON.stringify({ ...state, _at: Date.now() }, null, 2));
   } catch (_) {}
+}
+
+export function getState() {
+  return state;
+}
+
+export function updateState(patch) {
+  Object.assign(state, patch);
+  persist();
 }
 
 export function readPersistedState() {
