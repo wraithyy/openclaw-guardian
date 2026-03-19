@@ -2,6 +2,20 @@
   "name": "openclaw-guardian",
   "version": "1.0.0",
   "description": "Rate-limit aware proxy + session healer for OpenClaw / Anthropic API",
+  "keywords": [
+    "anthropic",
+    "claude",
+    "openclaw",
+    "rate-limit",
+    "proxy",
+    "session-healer",
+    "grafana",
+    "prometheus",
+    "loki",
+    "observability",
+    "llm",
+    "ai-ops"
+  ],
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
