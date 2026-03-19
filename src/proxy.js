@@ -33,7 +33,7 @@ export function startProxy() {
     });
   });
 
-  server.listen(pcfg.port, '127.0.0.1', () => {
+  server.listen(pcfg.port, pcfg.bindHost ?? '127.0.0.1', () => {
     logger.info('Proxy started', { port: pcfg.port, upstream: UPSTREAM.href });
     logger.info('Metrics: http://127.0.0.1:' + pcfg.port + '/_guardian/metrics');
     logger.info('Health:  http://127.0.0.1:' + pcfg.port + '/_guardian/health');
@@ -58,6 +58,9 @@ function doForward(origReq, res, body, attempt) {
     };
 
     const pReq = httpsReq(opts, (pRes) => {
+      const rlHeaders = Object.fromEntries(Object.entries(pRes.headers).filter(([k]) => k.includes('ratelimit')));
+      if (Object.keys(rlHeaders).length > 0) logger.info('Rate-limit headers', rlHeaders);
+      else logger.debug('No ratelimit headers in response', { status: pRes.statusCode });
       updateRateLimitHeaders(pRes.headers);
 
       if (pRes.statusCode === 429) {

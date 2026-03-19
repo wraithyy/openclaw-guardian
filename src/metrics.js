@@ -30,9 +30,14 @@ export function renderPrometheus() {
     lines.push(`${name}_total ${value}`);
   }
 
-  gauge('guardian_remaining_requests', 'Requests left in current rate-limit window',        s.remainingRequests);
-  gauge('guardian_remaining_tokens',   'Tokens left in current rate-limit window',          s.remainingTokens);
+  gauge('guardian_remaining_requests', 'Requests left in current rate-limit window',        s.remainingRequests ?? -1);
+  gauge('guardian_remaining_tokens',   'Tokens left in current rate-limit window',          s.remainingTokens   ?? -1);
   gauge('guardian_cooldown',           '1 = proxy in cooldown, 0 = normal',                 s.cooldown ? 1 : 0);
+  // Unified rate-limit metrics
+  gauge('guardian_unified_5h_utilization', 'Anthropic unified 5h token utilization (0-1)', s.unified5hUtil);
+  gauge('guardian_unified_7d_utilization', 'Anthropic unified 7d token utilization (0-1)', s.unified7dUtil);
+  gauge('guardian_unified_throttled',      '1 = unified status throttled/blocked, 0 = allowed',
+    s.unifiedStatus == null ? null : (s.unifiedStatus === 'allowed' ? 0 : 1));
   gauge('guardian_queue_length',       'Pending requests in proxy queue',                   s.queueLength);
   gauge('guardian_sessions_scanned',   'Session files scanned in last healer pass',         h.sessionsScanned);
   gauge('guardian_at_risk',            '1 = healer paused due to cooldown, 0 = normal',     s.cooldown ? 1 : 0);
