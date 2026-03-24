@@ -41,6 +41,13 @@ const DEFAULTS = {
     token:         '',   // Grafana Cloud API token
     pushIntervalMs: 15_000,
   },
+  // Session tracking
+  sessionTracking: {
+    enabled: true,
+    maxTrackedSessions: 50,
+    sessionTtlMinutes: 60,
+    cronHeaderName: 'X-Openclaw-Job-Id',
+  },
   // Log
   logPath: join(homedir(), '.openclaw', 'guardian.log'),
   logLevel: 'info',  // info | warn | error

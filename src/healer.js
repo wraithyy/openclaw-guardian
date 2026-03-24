@@ -4,19 +4,22 @@
  * Scans ~/.openclaw/agents/ (recursive) for session .jsonl files.
  * Detects:
  *   - unparseable JSON lines
- *   - tool_use without matching tool_result
- *   - files over 2MB
+ *   - tool_use without matching tool_result (injects synthetic error result)
+ *   - files over 2MB (suggests compaction instead of deleting)
  *   - stale .jsonl.lock files
+ *
+ * Respects active sessions — skips files with recent proxy activity.
  */
 import {
   readdirSync, statSync, readFileSync, writeFileSync,
   unlinkSync, renameSync, existsSync,
 } from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { config }             from './config.js';
 import { logger }             from './logger.js';
-import { readPersistedState } from './state.js';
+import { readPersistedState, updateState, getState } from './state.js';
 import { healerMetrics }      from './metrics.js';
+import { hasRecentActivity }  from './sessions.js';
 
 const MAX_SIZE   = config.healer.maxFileSizeBytes;
 const STALE_LOCK = config.healer.staleLockMinutes * 60 * 1000;
@@ -48,6 +51,16 @@ export async function runOnce() {
         logger.info('Cooldown – skip', { file });
         continue;
       }
+
+      // Active session guard: skip files with recent proxy activity
+      if (hasRecentActivity(60_000)) {
+        const mtime = safeStatMtime(file);
+        if (mtime && (Date.now() - mtime) < 60_000) {
+          logger.info('Active session – skip', { file });
+          continue;
+        }
+      }
+
       healFile(file);
     }
   }
@@ -98,9 +111,11 @@ function healFile(filePath) {
   let st;
   try { st = statSync(filePath); } catch { return; }
 
+  // Size-based: suggest compaction instead of deleting
   if (st.size > MAX_SIZE) {
-    logger.warn('File too large – removing', { filePath, sizeBytes: st.size });
-    drop(filePath);
+    logger.warn('File too large – flagging for compaction', { filePath, sizeBytes: st.size });
+    healerMetrics.compactionsSuggested = (healerMetrics.compactionsSuggested ?? 0) + 1;
+    updateState({ compactionSuggested: true, compactionFile: filePath, compactionSizeBytes: st.size });
     return;
   }
 
@@ -138,44 +153,57 @@ function repairLines(lines, filePath) {
     }
   }
 
-  // Pass 2: orphaned tool_use check
-  const uses = new Set();
+  // Pass 2: orphaned tool_use check — inject synthetic error result instead of dropping
+  const uses = new Map();    // id -> tool_use block
   const results = new Set();
   for (const line of valid) {
     let e;
     try { e = JSON.parse(line); } catch { continue; }
     const content = Array.isArray(e.content) ? e.content : [];
     for (const b of content) {
-      if (b?.type === 'tool_use')    uses.add(b.id);
+      if (b?.type === 'tool_use')    uses.set(b.id, b);
       if (b?.type === 'tool_result') results.add(b.tool_use_id);
     }
-    if (e.type === 'tool_use')    uses.add(e.id);
+    if (e.type === 'tool_use')    uses.set(e.id, e);
     if (e.type === 'tool_result') results.add(e.tool_use_id);
   }
 
-  const orphaned = [...uses].filter((id) => !results.has(id));
-  if (orphaned.length === 0) return { valid, changed };
+  const orphanedIds = [...uses.keys()].filter((id) => !results.has(id));
+  if (orphanedIds.length === 0) return { valid, changed };
 
-  logger.warn('Orphaned tool_use – removing', { filePath, orphaned });
-  const cleaned = valid.map((line) => {
-    try {
-      const e = JSON.parse(line);
-      // Whole message is an orphaned tool_use → drop entire line
-      if (e.type === 'tool_use' && orphaned.includes(e.id)) return null;
-      // Message contains orphaned blocks in content array → filter them out
-      if (Array.isArray(e.content)) {
-        const filtered = e.content.filter(
-          (b) => !(b?.type === 'tool_use' && orphaned.includes(b.id))
-        );
-        if (filtered.length !== e.content.length) {
-          e.content = filtered;
-          return JSON.stringify(e);
-        }
-      }
-      return line;
-    } catch { return null; }
-  }).filter(Boolean);
-  return { valid: cleaned, changed: true };
+  // Non-destructive: inject synthetic tool_result immediately after the line
+  // containing each orphaned tool_use (Anthropic requires tool_result in the
+  // user turn directly following the assistant turn with tool_use)
+  logger.warn('Orphaned tool_use – injecting synthetic error results', { filePath, orphanedIds });
+
+  const orphanedSet = new Set(orphanedIds);
+  const repaired = [];
+  for (const line of valid) {
+    repaired.push(line);
+    // Check if this line contains any orphaned tool_use blocks
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    const content = Array.isArray(e.content) ? e.content : [];
+    const lineOrphans = content
+      .filter((b) => b?.type === 'tool_use' && orphanedSet.has(b.id))
+      .map((b) => b.id);
+    // Also check top-level tool_use
+    if (e.type === 'tool_use' && orphanedSet.has(e.id)) {
+      lineOrphans.push(e.id);
+    }
+    if (lineOrphans.length > 0) {
+      // Insert synthetic tool_result user turn right after this assistant turn
+      const resultBlocks = lineOrphans.map((id) => ({
+        type: 'tool_result',
+        tool_use_id: id,
+        is_error: true,
+        content: `[guardian-healer] Session interrupted. Tool "${uses.get(id)?.name ?? 'unknown'}" did not complete.`,
+      }));
+      repaired.push(JSON.stringify({ role: 'user', content: resultBlocks }));
+    }
+  }
+
+  return { valid: repaired, changed: true };
 }
 
 function drop(filePath) {
@@ -191,4 +219,8 @@ function drop(filePath) {
   } catch (e) {
     logger.error('Delete failed', { filePath, error: e.message });
   }
+}
+
+function safeStatMtime(filePath) {
+  try { return statSync(filePath).mtimeMs; } catch { return null; }
 }

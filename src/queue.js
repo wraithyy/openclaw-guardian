@@ -1,5 +1,7 @@
 /**
  * queue.js – FIFO async queue with concurrency limit + rate-limit throttle.
+ *
+ * Supports priority: 'high' (cron) requests go to front of queue.
  */
 import { config } from './config.js';
 import { state, getState, updateState } from './state.js';
@@ -12,9 +14,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 let running = 0;
 const q = [];
 
-export function enqueue(task) {
+/**
+ * @param {Function} task
+ * @param {'normal'|'high'} priority - 'high' for cron jobs, pushed to front
+ */
+export function enqueue(task, priority = 'normal') {
   return new Promise((resolve, reject) => {
-    q.push({ task, resolve, reject });
+    const item = { task, resolve, reject };
+    if (priority === 'high') {
+      q.unshift(item);
+      logger.info('Priority request queued at front', { queueLength: q.length });
+    } else {
+      q.push(item);
+    }
     updateState({ queueLength: q.length });
     _drain();
   });
