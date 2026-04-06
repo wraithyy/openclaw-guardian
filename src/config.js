@@ -1,5 +1,7 @@
 /**
  * config.js – Loads ~/.openclaw/guardian.config.json and merges with defaults.
+ *
+ * v2: provider-agnostic. No proxy config. Adds http server + usage tracker config.
  */
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
@@ -8,21 +10,12 @@ import { join } from 'path';
 const CONFIG_PATH = join(homedir(), '.openclaw', 'guardian.config.json');
 
 const DEFAULTS = {
-  // Proxy
-  proxy: {
+  // HTTP server (metrics + health endpoints)
+  http: {
     port: 4747,
-    upstreamBase: 'https://api.anthropic.com',
-    maxConcurrency: 1,
-    throttle: {
-      warnThreshold: 5,   // delay when remainingRequests < this
-      pauseThreshold: 2,  // pause queue until reset
-      delayMin: 500,      // ms
-      delayMax: 1500,     // ms
-    },
-    maxRetries: 1,
-    backoffBase: 1000,    // ms for exponential backoff
+    bindHost: '127.0.0.1',
   },
-  // Healer
+  // Session file healer
   healer: {
     sessionDirs: [join(homedir(), '.openclaw', 'agents')],
     pollIntervalMs: 5000,
@@ -30,32 +23,32 @@ const DEFAULTS = {
     staleLockMinutes: 10,
     archiveCorrupted: false,  // false = delete, true = rename to .bak
   },
-  // Shared state file (proxy writes, healer reads)
-  sharedStatePath: join(homedir(), '.openclaw', 'guardian.state.json'),
-  // Grafana Cloud push (optional)
+  // Usage tracker (reads session JSONL files to aggregate model/session stats)
+  usage: {
+    enabled: true,
+    sessionDirs: [join(homedir(), '.openclaw', 'agents')],
+    pollIntervalMs: 30_000,  // scan every 30s
+    retentionDays: 30,
+    persistPath: join(homedir(), '.openclaw', 'guardian.usage.json'),
+  },
+  // Grafana Cloud push (optional, zero external deps)
   grafana: {
-    enabled:       false,
-    mimirUrl:      '',   // e.g. https://prometheus-prod-XX.grafana.net/api/prom/push
-    lokiUrl:       '',   // e.g. https://logs-prod-XX.grafana.net/loki/api/v1/push
-    user:          '',   // numeric Grafana Cloud user ID
-    token:         '',   // Grafana Cloud API token
+    enabled: false,
+    mimirUrl: '',   // e.g. https://prometheus-prod-XX.grafana.net/api/prom/push
+    lokiUrl:  '',   // e.g. https://logs-prod-XX.grafana.net/loki/api/v1/push
+    user:     '',   // numeric Grafana Cloud user ID
+    token:    '',   // Grafana Cloud API token
     pushIntervalMs: 15_000,
   },
-  // Session tracking
-  sessionTracking: {
-    enabled: true,
-    maxTrackedSessions: 50,
-    sessionTtlMinutes: 60,
-    cronHeaderName: 'X-Openclaw-Job-Id',
-  },
-  // Log
-  logPath: join(homedir(), '.openclaw', 'guardian.log'),
+  // Shared state file (healer writes, exporter reads)
+  sharedStatePath: join(homedir(), '.openclaw', 'guardian.state.json'),
+  logPath:  join(homedir(), '.openclaw', 'guardian.log'),
   logLevel: 'info',  // info | warn | error
 };
 
 function loadConfig() {
   if (!existsSync(CONFIG_PATH)) {
-    // Write defaults on first run
+    // Write defaults on first run so the user has a template to edit.
     mkdirSync(join(homedir(), '.openclaw'), { recursive: true });
     writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULTS, null, 2));
     return DEFAULTS;

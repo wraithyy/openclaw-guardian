@@ -1,41 +1,38 @@
 /**
  * healer.js – Session file monitor and repair daemon.
  *
- * Scans ~/.openclaw/agents/ (recursive) for session .jsonl files.
- * Detects:
- *   - unparseable JSON lines
- *   - tool_use without matching tool_result (injects synthetic error result)
- *   - files over 2MB (suggests compaction instead of deleting)
- *   - stale .jsonl.lock files
+ * Scans configured session dirs (recursive) for .jsonl files and:
+ *   - Drops unparseable JSON lines
+ *   - Injects synthetic error results for orphaned tool calls
+ *   - Flags oversized files for compaction (never deletes them)
+ *   - Removes stale .jsonl.lock files
  *
- * Respects active sessions — skips files with recent proxy activity.
+ * Provider-agnostic (v2): supports both OpenClaw toolCall/role:tool format
+ * and Anthropic tool_use/tool_result format. Active session detection is
+ * based purely on file mtime (no proxy required).
  */
 import {
   readdirSync, statSync, readFileSync, writeFileSync,
   unlinkSync, renameSync, existsSync,
 } from 'fs';
-import { join, basename } from 'path';
-import { config }             from './config.js';
-import { logger }             from './logger.js';
-import { readPersistedState, updateState, getState } from './state.js';
-import { healerMetrics }      from './metrics.js';
-import { hasRecentActivity }  from './sessions.js';
+import { join } from 'path';
+import { config }        from './config.js';
+import { logger }        from './logger.js';
+import { updateState }   from './state.js';
+import { healerMetrics } from './metrics.js';
 
 const MAX_SIZE   = config.healer.maxFileSizeBytes;
 const STALE_LOCK = config.healer.staleLockMinutes * 60 * 1000;
 const ARCHIVE    = config.healer.archiveCorrupted;
 
+// Files modified within this window are considered active and are skipped.
+const ACTIVE_WINDOW_MS = 60_000;
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function runOnce() {
-  const ps = readPersistedState();
-  const inCooldown = ps?.cooldown === true;
-
-  if (inCooldown) {
-    logger.warn('Healer: proxy in cooldown – skipping repairs');
-  }
-
   let scanned = 0;
+
   for (const baseDir of config.healer.sessionDirs) {
     if (!existsSync(baseDir)) continue;
     const files = findFiles(baseDir);
@@ -47,18 +44,12 @@ export async function runOnce() {
       }
       if (!file.endsWith('.jsonl')) continue;
       scanned++;
-      if (inCooldown) {
-        logger.info('Cooldown – skip', { file });
-        continue;
-      }
 
-      // Active session guard: skip files with recent proxy activity
-      if (hasRecentActivity(60_000)) {
-        const mtime = safeStatMtime(file);
-        if (mtime && (Date.now() - mtime) < 60_000) {
-          logger.info('Active session – skip', { file });
-          continue;
-        }
+      // Skip files modified very recently — likely an active session write.
+      const mtime = safeStatMtime(file);
+      if (mtime && (Date.now() - mtime) < ACTIVE_WINDOW_MS) {
+        logger.info('Active session – skip', { file });
+        continue;
       }
 
       healFile(file);
@@ -67,6 +58,11 @@ export async function runOnce() {
 
   healerMetrics.sessionsScanned = scanned;
   healerMetrics.scanRuns++;
+  updateState({
+    healerLastRun:      new Date().toISOString(),
+    healerFilesScanned: scanned,
+    healerRepairs:      healerMetrics.sessionsRepaired,
+  });
 }
 
 export function startDaemon() {
@@ -111,7 +107,7 @@ function healFile(filePath) {
   let st;
   try { st = statSync(filePath); } catch { return; }
 
-  // Size-based: suggest compaction instead of deleting
+  // Oversized: flag for compaction, do not delete.
   if (st.size > MAX_SIZE) {
     logger.warn('File too large – flagging for compaction', { filePath, sizeBytes: st.size });
     healerMetrics.compactionsSuggested = (healerMetrics.compactionsSuggested ?? 0) + 1;
@@ -141,6 +137,19 @@ function healFile(filePath) {
   }
 }
 
+/**
+ * Two-pass repair:
+ *   Pass 1 – drop lines with invalid JSON.
+ *   Pass 2 – find orphaned tool calls and inject synthetic error results.
+ *
+ * Supports two formats:
+ *   OpenClaw: content[].type === "toolCall" / role:"tool" + tool_call_id
+ *   Anthropic: content[].type === "tool_use" / content[].type === "tool_result"
+ *
+ * @param {string[]} lines
+ * @param {string} filePath
+ * @returns {{ valid: string[], changed: boolean }}
+ */
 function repairLines(lines, filePath) {
   // Pass 1: drop invalid JSON
   const valid = [];
@@ -153,53 +162,98 @@ function repairLines(lines, filePath) {
     }
   }
 
-  // Pass 2: orphaned tool_use check — inject synthetic error result instead of dropping
-  const uses = new Map();    // id -> tool_use block
-  const results = new Set();
+  // Pass 2: orphaned tool call detection
+  //
+  // toolCalls  : id -> { format: 'openclaw' | 'anthropic', name }
+  // results    : Set of ids that have a matching result
+  const toolCalls = new Map();
+  const results   = new Set();
+
   for (const line of valid) {
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    const content = Array.isArray(e.content) ? e.content : [];
-    for (const b of content) {
-      if (b?.type === 'tool_use')    uses.set(b.id, b);
-      if (b?.type === 'tool_result') results.add(b.tool_use_id);
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+
+    // Unwrap OpenClaw session envelope: { type:"message", message:{...} }
+    const msg = (entry.type === 'message' && entry.message) ? entry.message : entry;
+
+    const content = Array.isArray(msg.content) ? msg.content : [];
+
+    for (const block of content) {
+      // OpenClaw format
+      if (block?.type === 'toolCall' && block.id) {
+        toolCalls.set(block.id, { format: 'openclaw', name: block.name });
+      }
+      // Anthropic format
+      if (block?.type === 'tool_use' && block.id) {
+        toolCalls.set(block.id, { format: 'anthropic', name: block.name });
+      }
+      // Anthropic tool_result (inside user message content array)
+      if (block?.type === 'tool_result' && block.tool_use_id) {
+        results.add(block.tool_use_id);
+      }
     }
-    if (e.type === 'tool_use')    uses.set(e.id, e);
-    if (e.type === 'tool_result') results.add(e.tool_use_id);
+
+    // OpenClaw tool result: role:"tool" + tool_call_id at message level
+    if (msg.role === 'tool' && msg.tool_call_id) {
+      results.add(msg.tool_call_id);
+    }
   }
 
-  const orphanedIds = [...uses.keys()].filter((id) => !results.has(id));
-  if (orphanedIds.length === 0) return { valid, changed };
+  const orphanIds = [...toolCalls.keys()].filter((id) => !results.has(id));
+  if (orphanIds.length === 0) return { valid, changed };
 
-  // Non-destructive: inject synthetic tool_result immediately after the line
-  // containing each orphaned tool_use (Anthropic requires tool_result in the
-  // user turn directly following the assistant turn with tool_use)
-  logger.warn('Orphaned tool_use – injecting synthetic error results', { filePath, orphanedIds });
+  logger.warn('Orphaned tool calls – injecting synthetic error results', { filePath, orphanIds });
 
-  const orphanedSet = new Set(orphanedIds);
-  const repaired = [];
+  const orphanSet = new Set(orphanIds);
+  const repaired  = [];
+
   for (const line of valid) {
     repaired.push(line);
-    // Check if this line contains any orphaned tool_use blocks
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    const content = Array.isArray(e.content) ? e.content : [];
+
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+
+    const msg = (entry.type === 'message' && entry.message) ? entry.message : entry;
+    const content = Array.isArray(msg.content) ? msg.content : [];
+
+    // Collect all orphaned tool calls referenced in this line.
     const lineOrphans = content
-      .filter((b) => b?.type === 'tool_use' && orphanedSet.has(b.id))
-      .map((b) => b.id);
-    // Also check top-level tool_use
-    if (e.type === 'tool_use' && orphanedSet.has(e.id)) {
-      lineOrphans.push(e.id);
-    }
-    if (lineOrphans.length > 0) {
-      // Insert synthetic tool_result user turn right after this assistant turn
-      const resultBlocks = lineOrphans.map((id) => ({
-        type: 'tool_result',
-        tool_use_id: id,
-        is_error: true,
-        content: `[guardian-healer] Session interrupted. Tool "${uses.get(id)?.name ?? 'unknown'}" did not complete.`,
-      }));
-      repaired.push(JSON.stringify({ role: 'user', content: resultBlocks }));
+      .filter((b) => (b?.type === 'toolCall' || b?.type === 'tool_use') && orphanSet.has(b.id))
+      .map((b) => ({ id: b.id, ...toolCalls.get(b.id) }));
+
+    if (lineOrphans.length === 0) continue;
+
+    // Inject one synthetic result per orphaned call, matching the source format.
+    for (const { id, format, name } of lineOrphans) {
+      const errorText = `[guardian-healer] Session interrupted. Tool "${name ?? 'unknown'}" did not complete.`;
+
+      if (format === 'openclaw') {
+        // OpenClaw expects a separate message with role:"tool"
+        const syntheticMsg = {
+          type: 'message',
+          message: {
+            role:         'tool',
+            tool_call_id: id,
+            content:      errorText,
+          },
+        };
+        repaired.push(JSON.stringify(syntheticMsg));
+      } else {
+        // Anthropic expects role:"user" with tool_result content block
+        const syntheticMsg = {
+          type: 'message',
+          message: {
+            role: 'user',
+            content: [{
+              type:        'tool_result',
+              tool_use_id: id,
+              is_error:    true,
+              content:     errorText,
+            }],
+          },
+        };
+        repaired.push(JSON.stringify(syntheticMsg));
+      }
     }
   }
 

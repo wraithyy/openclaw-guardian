@@ -1,97 +1,86 @@
 /**
  * metrics.js – Prometheus text-format renderer + healer counters.
  *
- * Includes per-session metrics from session tracking.
+ * v2: Provider-agnostic. Renders per-model usage from usage tracker,
+ * healer stats, and daily cost/request gauges. No Anthropic-specific metrics.
  */
-import { getState } from './state.js';
-import { getTrackedSessions, trackedSessionCount } from './sessions.js';
+import { getState }     from './state.js';
+import { getUsageStats } from './usage.js';
 
 /** Updated by healer.js after each scan pass. */
 export const healerMetrics = {
-  sessionsScanned:   0,
-  sessionsRepaired:  0,
-  sessionsDeleted:   0,
-  staleLocksRemoved: 0,
-  scanRuns:          0,
+  sessionsScanned:      0,
+  sessionsRepaired:     0,
+  sessionsDeleted:      0,
+  staleLocksRemoved:    0,
+  scanRuns:             0,
   compactionsSuggested: 0,
 };
 
+// ─── Renderer ─────────────────────────────────────────────────────────────────
+
 export function renderPrometheus() {
-  const s = getState();
-  const h = healerMetrics;
+  const s     = getState();
+  const h     = healerMetrics;
+  const usage = getUsageStats();
   const lines = [];
+
+  // Track which metric names have had their HELP/TYPE header emitted.
+  const declared = new Set();
+
+  function header(type, name, help) {
+    if (declared.has(name)) return;
+    declared.add(name);
+    lines.push(`# HELP ${name} ${help}`);
+    lines.push(`# TYPE ${name} ${type}`);
+  }
 
   function gauge(name, help, value, labels = '') {
     if (value === null || value === undefined) return;
-    if (labels && !lines.some(l => l.startsWith(`# HELP ${name}`))) {
-      lines.push(`# HELP ${name} ${help}`);
-      lines.push(`# TYPE ${name} gauge`);
-    } else if (!labels) {
-      lines.push(`# HELP ${name} ${help}`);
-      lines.push(`# TYPE ${name} gauge`);
-    }
+    header('gauge', name, help);
     const labelStr = labels ? `{${labels}}` : '';
     lines.push(`${name}${labelStr} ${value}`);
   }
 
   function counter(name, help, value, labels = '') {
-    if (!lines.some(l => l.startsWith(`# HELP ${name}`))) {
-      lines.push(`# HELP ${name} ${help}`);
-      lines.push(`# TYPE ${name} counter`);
-    }
+    header('counter', name, help);
     const labelStr = labels ? `{${labels}}` : '';
     lines.push(`${name}_total${labelStr} ${value}`);
   }
 
-  // ─── Global metrics ─────────────────────────────────────────────────────────
-  gauge('guardian_remaining_requests', 'Requests left in current rate-limit window',        s.remainingRequests ?? -1);
-  gauge('guardian_remaining_tokens',   'Tokens left in current rate-limit window',          s.remainingTokens   ?? -1);
-  gauge('guardian_cooldown',           '1 = proxy in cooldown, 0 = normal',                 s.cooldown ? 1 : 0);
-  gauge('guardian_unified_5h_utilization', 'Anthropic unified 5h token utilization (0-1)', s.unified5hUtil);
-  gauge('guardian_unified_7d_utilization', 'Anthropic unified 7d token utilization (0-1)', s.unified7dUtil);
-  gauge('guardian_unified_throttled',      '1 = unified status throttled/blocked, 0 = allowed',
-    s.unifiedStatus == null ? null : (s.unifiedStatus === 'allowed' ? 0 : 1));
-  gauge('guardian_queue_length',       'Pending requests in proxy queue',                   s.queueLength);
-  gauge('guardian_sessions_scanned',   'Session files scanned in last healer pass',         h.sessionsScanned);
-  gauge('guardian_at_risk',            '1 = healer paused due to cooldown, 0 = normal',     s.cooldown ? 1 : 0);
-  gauge('guardian_tracked_sessions',   'Number of currently tracked sessions',              trackedSessionCount());
+  // ─── Session / healer gauges ───────────────────────────────────────────────
+  gauge('guardian_active_sessions',    'Currently active sessions (activity in last 60s)', s.activeSessions ?? 0);
+  gauge('guardian_healer_files_scanned','Session files scanned in last healer pass',        h.sessionsScanned);
+  gauge('guardian_healer_at_risk',     'Always 0 in v2 (no proxy cooldown)',                0);
 
-  counter('guardian_requests',           'Total requests forwarded to Anthropic',           s.totalRequests);
-  counter('guardian_throttles',          'Times throttle delay was applied',                s.totalThrottles);
-  counter('guardian_429s',               'Times 429 received from Anthropic',               s.total429s);
-  counter('guardian_sessions_repaired',  'Session files successfully repaired by healer',   h.sessionsRepaired);
-  counter('guardian_sessions_deleted',   'Session files deleted as unrepairable by healer', h.sessionsDeleted);
-  counter('guardian_stale_locks_removed','Stale lock files removed by healer',              h.staleLocksRemoved);
-  counter('guardian_scan_runs',          'Total healer scan runs completed',                h.scanRuns);
-  counter('guardian_compactions_suggested', 'Times healer suggested compaction instead of deleting', h.compactionsSuggested);
+  // ─── Healer counters ───────────────────────────────────────────────────────
+  counter('guardian_healer_repairs',              'Session files successfully repaired by healer',             h.sessionsRepaired);
+  counter('guardian_healer_deletions',            'Session files deleted as unrepairable by healer',           h.sessionsDeleted);
+  counter('guardian_healer_stale_locks',          'Stale lock files removed by healer',                       h.staleLocksRemoved);
+  counter('guardian_healer_scans',                'Total healer scan passes completed',                        h.scanRuns);
+  counter('guardian_healer_compactions_suggested','Times healer flagged an oversized file for compaction',     h.compactionsSuggested);
 
-  // ─── Per-session metrics ────────────────────────────────────────────────────
-  const tracked = getTrackedSessions();
-  if (tracked.size > 0) {
-    lines.push('');
-    lines.push('# HELP guardian_session_requests Per-session request count');
-    lines.push('# TYPE guardian_session_requests counter');
-    lines.push('# HELP guardian_session_input_tokens Per-session input tokens consumed');
-    lines.push('# TYPE guardian_session_input_tokens counter');
-    lines.push('# HELP guardian_session_output_tokens Per-session output tokens consumed');
-    lines.push('# TYPE guardian_session_output_tokens counter');
-    lines.push('# HELP guardian_session_cache_read_tokens Per-session cache read tokens');
-    lines.push('# TYPE guardian_session_cache_read_tokens counter');
-    lines.push('# HELP guardian_session_errors Per-session error count');
-    lines.push('# TYPE guardian_session_errors counter');
+  // ─── Per-model metrics ─────────────────────────────────────────────────────
+  for (const [model, m] of Object.entries(usage.models)) {
+    const lbl = `model="${sanitizeLabel(model)}"`;
+    counter('guardian_model_requests',          'Requests per model',           m.requests,         lbl);
+    counter('guardian_model_input_tokens',      'Input tokens per model',       m.inputTokens,      lbl);
+    counter('guardian_model_output_tokens',     'Output tokens per model',      m.outputTokens,     lbl);
+    counter('guardian_model_cache_read_tokens', 'Cache read tokens per model',  m.cacheReadTokens,  lbl);
+    gauge(  'guardian_model_cost',              'Cumulative cost in USD per model', m.cost,          lbl);
+  }
 
-    for (const [sid, ss] of tracked) {
-      const lbl = `session_id="${sanitizeLabel(sid)}",is_cron="${ss.isCron}"`;
-      lines.push(`guardian_session_requests_total{${lbl}} ${ss.requestCount}`);
-      lines.push(`guardian_session_input_tokens_total{${lbl}} ${ss.inputTokens}`);
-      lines.push(`guardian_session_output_tokens_total{${lbl}} ${ss.outputTokens}`);
-      lines.push(`guardian_session_cache_read_tokens_total{${lbl}} ${ss.cacheReadTokens}`);
-      lines.push(`guardian_session_errors_total{${lbl}} ${ss.errorCount}`);
-    }
+  // ─── Daily gauges ──────────────────────────────────────────────────────────
+  for (const [date, day] of Object.entries(usage.daily)) {
+    const lbl = `date="${sanitizeLabel(date)}"`;
+    gauge('guardian_daily_cost',     'Total cost in USD for the day',      day.cost,     lbl);
+    gauge('guardian_daily_requests', 'Total request count for the day',    day.requests, lbl);
   }
 
   return lines.join('\n') + '\n';
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function sanitizeLabel(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');

@@ -50,13 +50,17 @@
   "annotations": {
     "list": []
   },
-  "description": "OpenClaw Guardian \u2013 Anthropic rate-limit proxy + session healer",
+  "description": "OpenClaw Guardian – Anthropic rate-limit proxy + session healer",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "links": [],
   "panels": [
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -79,7 +83,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "red",
@@ -88,7 +92,8 @@
             ]
           },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -100,13 +105,21 @@
       "options": {
         "colorMode": "background",
         "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
+          ],
+          "fields": "",
+          "values": false
         },
-        "textMode": "auto"
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -114,23 +127,30 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_cooldown",
-          "legendFormat": "cooldown"
+          "legendFormat": "cooldown",
+          "refId": "A"
         }
       ],
-      "title": "\ud83d\udd34 Cooldown",
+      "title": "🔴 Cooldown",
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "description": "Anthropic unified 5h token utilization (0 = volno, 1 = plno)",
       "fieldConfig": {
         "defaults": {
+          "mappings": [],
+          "max": 1,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "red",
-                "value": null
+                "value": 0
               },
               {
                 "color": "orange",
@@ -147,7 +167,8 @@
             ]
           },
           "unit": "percentunit"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -159,12 +180,21 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
-        }
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -172,23 +202,30 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_unified_5h_utilization",
-          "legendFormat": "5h utilization"
+          "legendFormat": "5h utilization",
+          "refId": "A"
         }
       ],
-      "title": "\ud83d\udcca 5h Utilization",
+      "title": "📊 5h Utilization",
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "description": "Anthropic unified 7d token utilization (0 = volno, 1 = plno)",
       "fieldConfig": {
         "defaults": {
+          "mappings": [],
+          "max": 1,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "red",
-                "value": null
+                "value": 0
               },
               {
                 "color": "green",
@@ -197,7 +234,8 @@
             ]
           },
           "unit": "percentunit"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -209,12 +247,21 @@
       "options": {
         "colorMode": "value",
         "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
-        }
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -222,22 +269,28 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_unified_7d_utilization",
-          "legendFormat": "7d utilization"
+          "legendFormat": "7d utilization",
+          "refId": "A"
         }
       ],
-      "title": "\ud83d\udcc5 7d Utilization",
+      "title": "📅 7d Utilization",
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
+          "mappings": [],
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "orange",
@@ -250,7 +303,8 @@
             ]
           },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -262,12 +316,21 @@
       "options": {
         "colorMode": "background",
         "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
-        }
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -275,13 +338,18 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_queue_length",
-          "legendFormat": "queue"
+          "legendFormat": "queue",
+          "refId": "A"
         }
       ],
-      "title": "\u23f3 Queue Length",
+      "title": "⏳ Queue Length",
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -304,7 +372,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "orange",
@@ -313,7 +381,8 @@
             ]
           },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -325,12 +394,21 @@
       "options": {
         "colorMode": "background",
         "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
-        }
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -338,17 +416,181 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_at_risk",
-          "legendFormat": "at risk"
+          "legendFormat": "at risk",
+          "refId": "A"
         }
       ],
-      "title": "\u26a0\ufe0f At Risk (healer paused)",
+      "title": "⚠️ At Risk (healer paused)",
       "type": "stat"
     },
     {
+      "description": "Unified rate-limit reset countdown. Shows time remaining until Anthropic lifts throttle/block.",
       "fieldConfig": {
         "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1800
+              },
+              {
+                "color": "orange",
+                "value": 7200
+              },
+              {
+                "color": "red",
+                "value": 14400
+              }
+            ]
+          },
+          "unit": "s",
+          "decimals": 0
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 20,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "expr": "clamp_min(guardian_unified_reset_epoch - time(), 0)",
+          "legendFormat": "reset in"
+        }
+      ],
+      "title": "Reset Countdown",
+      "type": "stat"
+    },
+    {
+      "description": "Absolute time when unified rate-limit resets (local timezone)",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "dateTimeFromNow",
+          "decimals": 0
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 24
+      },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "expr": "guardian_unified_reset_epoch * 1000",
+          "legendFormat": "resets"
+        }
+      ],
+      "title": "Unified Reset Time",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "axisSoftMax": 1,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": 3600000,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
           "min": 0,
-          "unit": "short"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "percentunit"
         },
         "overrides": [
           {
@@ -374,13 +616,18 @@
       "id": 6,
       "options": {
         "legend": {
+          "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
         }
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "expr": "guardian_unified_5h_utilization",
@@ -393,13 +640,68 @@
           "refId": "B"
         }
       ],
-      "title": "\ud83d\udcca Rate Limit \u2013 Remaining Requests & Tokens",
+      "title": "📊 Rate Limit – Remaining Requests & Tokens",
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
           "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "reqps"
         },
         "overrides": []
@@ -413,13 +715,18 @@
       "id": 7,
       "options": {
         "legend": {
+          "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
         }
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -427,7 +734,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "rate(guardian_requests_total[1m])",
-          "legendFormat": "req/s"
+          "legendFormat": "req/s",
+          "refId": "A"
         },
         {
           "datasource": {
@@ -435,7 +743,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "rate(guardian_throttles_total[1m])",
-          "legendFormat": "throttles/s"
+          "legendFormat": "throttles/s",
+          "refId": "B"
         },
         {
           "datasource": {
@@ -443,18 +752,75 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "rate(guardian_429s_total[1m])",
-          "legendFormat": "429s/s"
+          "legendFormat": "429s/s",
+          "refId": "C"
         }
       ],
-      "title": "\ud83d\udd04 Request Rate & Throttles",
+      "title": "🔄 Request Rate & Throttles",
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
           "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 8,
@@ -465,13 +831,18 @@
       "id": 8,
       "options": {
         "legend": {
+          "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
         }
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -479,7 +850,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_sessions_scanned",
-          "legendFormat": "scanned"
+          "legendFormat": "scanned",
+          "refId": "A"
         },
         {
           "datasource": {
@@ -487,7 +859,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "increase(guardian_sessions_repaired_total[5m])",
-          "legendFormat": "repaired (5m)"
+          "legendFormat": "repaired (5m)",
+          "refId": "B"
         },
         {
           "datasource": {
@@ -495,7 +868,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "increase(guardian_sessions_deleted_total[5m])",
-          "legendFormat": "deleted (5m)"
+          "legendFormat": "deleted (5m)",
+          "refId": "C"
         },
         {
           "datasource": {
@@ -503,16 +877,72 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "increase(guardian_stale_locks_removed_total[5m])",
-          "legendFormat": "stale locks (5m)"
+          "legendFormat": "stale locks (5m)",
+          "refId": "D"
         }
       ],
-      "title": "\ud83d\udee0 Session Healer Activity",
+      "title": "🛠 Session Healer Activity",
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
           "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "short"
         },
         "overrides": [
@@ -546,13 +976,18 @@
       "id": 9,
       "options": {
         "legend": {
+          "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "multi"
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
         }
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -560,7 +995,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_cooldown",
-          "legendFormat": "cooldown"
+          "legendFormat": "cooldown",
+          "refId": "A"
         },
         {
           "datasource": {
@@ -568,17 +1004,37 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_queue_length",
-          "legendFormat": "queue length"
+          "legendFormat": "queue length",
+          "refId": "B"
         }
       ],
-      "title": "\ud83c\udf21 Cooldown & Queue History",
+      "title": "🌡 Cooldown & Queue History",
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -590,12 +1046,21 @@
       "options": {
         "colorMode": "value",
         "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
-        }
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -603,21 +1068,27 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_requests_total",
-          "legendFormat": "total"
+          "legendFormat": "total",
+          "refId": "A"
         }
       ],
-      "title": "\ud83d\udcc8 Total Requests (all time)",
+      "title": "📈 Total Requests (all time)",
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
+          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "orange",
@@ -630,7 +1101,8 @@
             ]
           },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -642,12 +1114,21 @@
       "options": {
         "colorMode": "background",
         "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
-        }
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -655,17 +1136,37 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_429s_total",
-          "legendFormat": "429s"
+          "legendFormat": "429s",
+          "refId": "A"
         }
       ],
-      "title": "\ud83d\udeab Total 429s (all time)",
+      "title": "🚫 Total 429s (all time)",
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -677,12 +1178,21 @@
       "options": {
         "colorMode": "value",
         "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
-        }
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -690,21 +1200,27 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_sessions_repaired_total",
-          "legendFormat": "repaired"
+          "legendFormat": "repaired",
+          "refId": "A"
         }
       ],
-      "title": "\ud83d\udd27 Sessions Repaired (total)",
+      "title": "🔧 Sessions Repaired (total)",
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
       "fieldConfig": {
         "defaults": {
+          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
-                "value": null
+                "value": 0
               },
               {
                 "color": "orange",
@@ -713,7 +1229,8 @@
             ]
           },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "h": 4,
@@ -725,12 +1242,21 @@
       "options": {
         "colorMode": "background",
         "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
-          ]
-        }
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
       },
+      "pluginVersion": "12.4.1",
       "targets": [
         {
           "datasource": {
@@ -738,10 +1264,11 @@
             "uid": "PBFA97CFB590B2093"
           },
           "expr": "guardian_sessions_deleted_total",
-          "legendFormat": "deleted"
+          "legendFormat": "deleted",
+          "refId": "A"
         }
       ],
-      "title": "\ud83d\uddd1 Sessions Deleted (total)",
+      "title": "🗑 Sessions Deleted (total)",
       "type": "stat"
     }
   ],

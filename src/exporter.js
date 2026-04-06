@@ -5,11 +5,15 @@
  * Loki:  Structured log push (JSON).
  *
  * Both use Basic Auth: user = numeric Grafana Cloud user ID, token = API key.
+ *
+ * v2: Updated collectMetrics() to use provider-agnostic metric names.
+ * Push logic is unchanged — it is generic protobuf/HTTP.
  */
 import { request } from 'https';
 import { config }        from './config.js';
 import { getState }      from './state.js';
 import { healerMetrics } from './metrics.js';
+import { getUsageStats } from './usage.js';
 import { logger }        from './logger.js';
 
 const gcfg = config.grafana ?? {};
@@ -127,37 +131,60 @@ function basicAuth() {
   return 'Basic ' + Buffer.from(`${gcfg.user}:${gcfg.token}`).toString('base64');
 }
 
-// ─── Mimir push ───────────────────────────────────────────────────────────────
+// ─── Metrics collection ───────────────────────────────────────────────────────
 
+/**
+ * Build the flat metric list pushed to Mimir.
+ * Per-model metrics are included as separate time-series (label-less names
+ * since remote_write label support requires extra encoding; we use _modelname
+ * suffixes for simplicity when labels are not viable in Mimir basic mode).
+ *
+ * For Prometheus text scraping, use the /metrics endpoint instead which
+ * renders full label support via renderPrometheus().
+ */
 function collectMetrics() {
-  const s = getState();
-  const h = healerMetrics;
-  return [
-    { name: 'guardian_remaining_requests',  value: s.remainingRequests ?? -1 },
-    { name: 'guardian_remaining_tokens',    value: s.remainingTokens   ?? -1 },
-    { name: 'guardian_cooldown',            value: s.cooldown ? 1 : 0 },
-    { name: 'guardian_queue_length',        value: s.queueLength },
-    { name: 'guardian_requests_total',      value: s.totalRequests },
-    { name: 'guardian_throttles_total',     value: s.totalThrottles },
-    { name: 'guardian_429s_total',          value: s.total429s },
-    { name: 'guardian_sessions_scanned',    value: h.sessionsScanned },
-    { name: 'guardian_sessions_repaired_total',   value: h.sessionsRepaired },
-    { name: 'guardian_sessions_deleted_total',    value: h.sessionsDeleted },
-    { name: 'guardian_stale_locks_removed_total', value: h.staleLocksRemoved },
-    { name: 'guardian_scan_runs_total',     value: h.scanRuns },
-    { name: 'guardian_at_risk',             value: s.cooldown ? 1 : 0 },
+  const s     = getState();
+  const h     = healerMetrics;
+  const usage = getUsageStats();
+
+  const base = [
+    { name: 'guardian_active_sessions',             value: s.activeSessions ?? 0 },
+    { name: 'guardian_healer_files_scanned',        value: h.sessionsScanned },
+    { name: 'guardian_healer_repairs_total',        value: h.sessionsRepaired },
+    { name: 'guardian_healer_deletions_total',      value: h.sessionsDeleted },
+    { name: 'guardian_healer_stale_locks_total',    value: h.staleLocksRemoved },
+    { name: 'guardian_healer_scans_total',          value: h.scanRuns },
+    { name: 'guardian_healer_compactions_suggested_total', value: h.compactionsSuggested },
+    { name: 'guardian_total_cost',                  value: s.totalCost ?? 0 },
+    { name: 'guardian_total_sessions',              value: s.totalSessions ?? 0 },
   ];
+
+  // Flatten per-model stats using sanitized name suffix
+  for (const [model, m] of Object.entries(usage.models)) {
+    const suffix = sanitizeMetricName(model);
+    base.push(
+      { name: `guardian_model_requests_total_${suffix}`,          value: m.requests },
+      { name: `guardian_model_input_tokens_total_${suffix}`,      value: m.inputTokens },
+      { name: `guardian_model_output_tokens_total_${suffix}`,     value: m.outputTokens },
+      { name: `guardian_model_cache_read_tokens_total_${suffix}`, value: m.cacheReadTokens },
+      { name: `guardian_model_cost_${suffix}`,                    value: m.cost },
+    );
+  }
+
+  return base;
 }
+
+// ─── Mimir push ───────────────────────────────────────────────────────────────
 
 async function pushMimir() {
   const proto  = buildWriteRequest(collectMetrics());
   const body   = snappyEncode(proto);
   const status = await httpPost(gcfg.mimirUrl, {
-    'Content-Type':                        'application/x-protobuf',
-    'Content-Encoding':                    'snappy',
-    'X-Prometheus-Remote-Write-Version':   '0.1.0',
-    'Authorization':                       basicAuth(),
-    'Content-Length':                      String(body.length),
+    'Content-Type':                      'application/x-protobuf',
+    'Content-Encoding':                  'snappy',
+    'X-Prometheus-Remote-Write-Version': '0.1.0',
+    'Authorization':                     basicAuth(),
+    'Content-Length':                    String(body.length),
   }, body);
   if (status >= 400) logger.warn('Mimir push failed', { status });
 }
@@ -201,4 +228,11 @@ export function startExporter() {
       catch (e) { logger.error('Loki push error', { error: e.message }); }
     }
   }, interval);
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Replace non-metric characters with underscores for use in metric name suffixes. */
+function sanitizeMetricName(s) {
+  return String(s).replace(/[^a-zA-Z0-9]/g, '_');
 }

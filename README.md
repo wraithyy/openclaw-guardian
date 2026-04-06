@@ -1,6 +1,6 @@
 # openclaw-guardian
 
-**Rate-limit aware HTTP proxy + session healer for OpenClaw / Anthropic Claude API**
+**Session healer + usage tracker for OpenClaw**
 
 Zero external dependencies. Node 22+.
 
@@ -8,15 +8,16 @@ Zero external dependencies. Node 22+.
 
 ## What it does
 
-### Proxy
-Sits between OpenClaw and `api.anthropic.com`. Queues concurrent requests, applies throttle delays when rate limits get tight, and enters cooldown on 429 until the window resets. Supports both the legacy per-resource headers and the new **unified rate-limit system** (`anthropic-ratelimit-unified-*`).
-
 ### Healer
-Scans OpenClaw session files (`.jsonl`) on a configurable interval. Detects and repairs corrupted tool use/result pairs, invalid JSON lines, and oversized files. Removes stale lock files. Skips writes when the proxy is in cooldown to avoid compounding problems.
+Scans OpenClaw session files (`.jsonl`) on a configurable interval. Detects and repairs corrupted tool use/result pairs (supports both OpenAI and Anthropic conversation formats), invalid JSON lines, and oversized files. Removes stale lock files. Skips files with recent activity to avoid mid-conversation corruption.
+
+### Usage Tracker
+Reads session JSONL files to aggregate per-model token usage and cost. Tracks active sessions, daily totals, and per-model breakdowns. Persists data to disk for restart recovery. Uses inode+offset cursors to efficiently read only new data on each scan.
 
 ### Observability
-- `/_guardian/metrics` — Prometheus text format, scraped by Grafana Alloy/Agent
+- `/_guardian/metrics` — Prometheus text format (per-model token/cost counters, healer stats)
 - `/_guardian/health` — JSON health check
+- `/_guardian/usage` — JSON usage breakdown (per-model, daily, active sessions)
 - Structured JSON logs
 - Optional push exporter to **Grafana Cloud** (Mimir + Loki, zero external deps)
 - Pre-built Grafana dashboard (`grafana-dashboard.json`)
@@ -35,23 +36,13 @@ cd openclaw-guardian
 
 ### 2. Configure
 
-On first run, `~/.openclaw/guardian.config.json` is created with defaults. The full schema:
+On first run, `~/.openclaw/guardian.config.json` is created with defaults:
 
 ```json
 {
-  "proxy": {
+  "http": {
     "port": 4747,
-    "bindHost": "127.0.0.1",
-    "upstreamBase": "https://api.anthropic.com",
-    "maxConcurrency": 5,
-    "throttle": {
-      "warnThreshold": 3,
-      "pauseThreshold": 1,
-      "delayMin": 500,
-      "delayMax": 1500
-    },
-    "maxRetries": 1,
-    "backoffBase": 1000
+    "bindHost": "127.0.0.1"
   },
   "healer": {
     "sessionDirs": ["~/.openclaw/agents"],
@@ -59,6 +50,13 @@ On first run, `~/.openclaw/guardian.config.json` is created with defaults. The f
     "maxFileSizeBytes": 2097152,
     "staleLockMinutes": 10,
     "archiveCorrupted": false
+  },
+  "usage": {
+    "enabled": true,
+    "sessionDirs": ["~/.openclaw/agents"],
+    "pollIntervalMs": 30000,
+    "retentionDays": 30,
+    "persistPath": "~/.openclaw/guardian.usage.json"
   },
   "grafana": {
     "enabled": false,
@@ -74,51 +72,27 @@ On first run, `~/.openclaw/guardian.config.json` is created with defaults. The f
 }
 ```
 
-**`bindHost`** — set to `0.0.0.0` if you need the metrics endpoint reachable from Docker containers (e.g. Prometheus in a compose stack). Defaults to `127.0.0.1`.
+**`bindHost`** — set to `0.0.0.0` if you need endpoints reachable from Docker containers (e.g. Prometheus). Defaults to `127.0.0.1`.
 
-### 3. Point OpenClaw to the proxy
-
-In `~/.openclaw/openclaw.json`, override the Anthropic base URL per model:
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "models": {
-        "anthropic/claude-sonnet-4-6": {
-          "params": { "baseUrl": "http://127.0.0.1:4747" }
-        },
-        "anthropic/claude-haiku-4-5": {
-          "params": { "baseUrl": "http://127.0.0.1:4747" }
-        }
-      }
-    }
-  }
-}
-```
-
-### 4. Run
+### 3. Run
 
 ```bash
-# Proxy + healer (recommended)
+# Full daemon (healer + usage tracker + metrics server)
 npm start
 
-# Proxy only
-npm run proxy
-
-# Healer daemon
+# Healer daemon only
 npm run healer
 
 # Single healer scan
 npm run once
 ```
 
-### 5. Systemd service
+### 4. Systemd service
 
 ```ini
 # /etc/systemd/system/openclaw-guardian.service
 [Unit]
-Description=OpenClaw Guardian (proxy + session healer)
+Description=OpenClaw Guardian (session healer + usage tracker)
 After=network.target
 
 [Service]
@@ -140,14 +114,68 @@ sudo systemctl enable --now openclaw-guardian
 
 ---
 
-## Metrics & Grafana
+## API Endpoints
 
-### Local Prometheus scrape (recommended)
+### GET `/_guardian/health`
 
-If Prometheus runs in Docker, set `bindHost: "0.0.0.0"` (or `"172.17.0.1"`) in the config and add `extra_hosts: ["host.docker.internal:host-gateway"]` to the Prometheus container:
+```json
+{ "ok": true, "version": 2, "uptime": 3600.5 }
+```
+
+### GET `/_guardian/usage`
+
+```json
+{
+  "models": {
+    "openai-codex/gpt-5.4": {
+      "requests": 227,
+      "inputTokens": 686446,
+      "outputTokens": 18108,
+      "cacheReadTokens": 2077568,
+      "cost": 2.51
+    },
+    "openrouter/google/gemini-2.5-flash-lite": { ... }
+  },
+  "daily": {
+    "2026-04-06": { "requests": 42, "cost": 0.15, "byModel": { ... } }
+  },
+  "activeSessions": 8,
+  "startedAt": "2026-04-06T12:33:12.000Z"
+}
+```
+
+### GET `/_guardian/metrics`
+
+Prometheus text format. See metrics table below.
+
+---
+
+## Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `guardian_active_sessions` | gauge | | Currently active sessions (activity in last 60s) |
+| `guardian_healer_files_scanned` | gauge | | Files scanned in last healer pass |
+| `guardian_healer_repairs_total` | counter | | Sessions successfully repaired |
+| `guardian_healer_deletions_total` | counter | | Sessions deleted (unrepairable) |
+| `guardian_healer_stale_locks_total` | counter | | Stale lock files removed |
+| `guardian_healer_scans_total` | counter | | Total healer scan passes |
+| `guardian_healer_compactions_suggested_total` | counter | | Oversized file detections |
+| `guardian_model_requests_total` | counter | `model` | Requests per model |
+| `guardian_model_input_tokens_total` | counter | `model` | Input tokens per model |
+| `guardian_model_output_tokens_total` | counter | `model` | Output tokens per model |
+| `guardian_model_cache_read_tokens_total` | counter | `model` | Cache read tokens per model |
+| `guardian_model_cost` | gauge | `model` | Cumulative cost in USD per model |
+| `guardian_daily_cost` | gauge | `date` | Cost for a given day |
+| `guardian_daily_requests` | gauge | `date` | Requests for a given day |
+
+### Grafana
+
+Import `grafana-dashboard.json` into Grafana (Dashboards -> Import -> Upload JSON).
+
+For Prometheus scraping from Docker:
 
 ```yaml
-# prometheus.yml
 scrape_configs:
   - job_name: openclaw-guardian
     static_configs:
@@ -155,67 +183,47 @@ scrape_configs:
     metrics_path: /_guardian/metrics
 ```
 
-### Loki log collection (Grafana Alloy)
+For Grafana Cloud push, set `grafana.enabled: true` in config with Mimir/Loki URLs and credentials.
 
-```alloy
-local.file_match "guardian" {
-  path_targets = [{
-    __path__ = "/path/to/.openclaw/guardian.log",
-    job      = "guardian",
-  }]
-}
+---
 
-loki.source.file "guardian" {
-  targets    = local.file_match.guardian.targets
-  forward_to = [loki.process.guardian.receiver]
-}
+## Architecture
 
-loki.process "guardian" {
-  stage.json {
-    expressions = {
-      level     = "level",
-      component = "component",
-      message   = "message",
-      error     = "error",
-    }
-  }
-  stage.labels {
-    values = { level = "level", component = "component" }
-  }
-  forward_to = [loki.write.default.receiver]
-}
+```
+                    +-----------------------+
+                    |   Guardian v2 Daemon  |
+                    |                       |
+~/.openclaw/agents/ |  +-------+ +-------+ |  :4747/_guardian/metrics
+   *.jsonl -------->|  |Healer | |Usage  | |--------> Prometheus
+                    |  +-------+ |Tracker| |  :4747/_guardian/usage
+                    |            +-------+ |--------> JSON API
+                    |  +--------+          |  :4747/_guardian/health
+                    |  |Exporter|----------|--> Grafana Cloud
+                    |  +--------+          |
+                    +-----------------------+
 ```
 
-### Grafana dashboard
+- **Healer**: Scans every 5s, repairs corrupt sessions, removes stale locks
+- **Usage Tracker**: Scans every 30s, reads new JSONL entries via cursors, aggregates per-model stats
+- **HTTP Server**: Exposes metrics, health, and usage endpoints
+- **Exporter**: Optional push to Grafana Cloud (Mimir + Loki)
 
-Import `grafana-dashboard.json` into Grafana (Dashboards → Import → Upload JSON).
+---
 
-### Available metrics
+## Migrating from v1
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `guardian_unified_5h_utilization` | gauge | Anthropic unified 5h token utilization (0–1) |
-| `guardian_unified_7d_utilization` | gauge | Anthropic unified 7d token utilization (0–1) |
-| `guardian_unified_throttled` | gauge | 1 = throttled/blocked by Anthropic, 0 = allowed |
-| `guardian_remaining_requests` | gauge | Requests left in window (legacy API, -1 if unknown) |
-| `guardian_remaining_tokens` | gauge | Tokens left in window (legacy API, -1 if unknown) |
-| `guardian_cooldown` | gauge | 1 = proxy in cooldown, 0 = normal |
-| `guardian_queue_length` | gauge | Pending requests in queue |
-| `guardian_at_risk` | gauge | 1 = healer paused due to cooldown |
-| `guardian_sessions_scanned` | gauge | Files scanned in last healer pass |
-| `guardian_requests_total` | counter | Total forwarded requests |
-| `guardian_throttles_total` | counter | Times throttle delay was applied |
-| `guardian_429s_total` | counter | Times 429 received from Anthropic |
-| `guardian_sessions_repaired_total` | counter | Sessions successfully repaired |
-| `guardian_sessions_deleted_total` | counter | Sessions deleted (unrepairable) |
-| `guardian_stale_locks_removed_total` | counter | Stale lock files removed |
-| `guardian_scan_runs_total` | counter | Total healer scan runs |
+v1 was a rate-limit proxy for Anthropic API traffic. v2 removes the proxy entirely:
 
-> **Note:** Anthropic switched to a unified rate-limit system in early 2026. The legacy `remaining_requests` / `remaining_tokens` metrics will show `-1` on accounts using the new system. Use `unified_5h_utilization` and `unified_7d_utilization` instead.
+| v1 | v2 |
+|----|-----|
+| HTTP proxy to api.anthropic.com | Removed (no proxy) |
+| Request queue with throttling | Removed |
+| Anthropic rate-limit tracking | Removed |
+| Session healer (Anthropic-only) | Session healer (multi-provider) |
+| Per-session proxy tracking | Per-model usage from JSONL files |
+| `proxy.js`, `queue.js`, `sessions.js` | `usage.js` (new) |
 
-### Grafana Cloud push (optional)
-
-Set `grafana.enabled: true` and fill in Mimir/Loki URLs, numeric user ID, and API token. Metrics are pushed via Prometheus remote_write (protobuf + snappy). Logs via Loki JSON API. No external npm packages required.
+Config changes: `proxy` and `sessionTracking` sections replaced by `http` and `usage`.
 
 ---
 
@@ -223,22 +231,14 @@ Set `grafana.enabled: true` and fill in Mimir/Loki URLs, numeric user ID, and AP
 
 | Problem | Fix |
 |---------|-----|
-| OpenClaw still hits 429 | Verify `baseUrl` points to `http://127.0.0.1:4747` |
-| `remaining_requests` always `-1` | Normal on new Anthropic unified rate-limit accounts — use `unified_5h_utilization` |
 | Healer not finding sessions | Check `sessionDirs` in config matches your actual path |
-| Proxy not starting | Check port isn't in use: `lsof -i :4747` |
-| Metrics unreachable from Docker | Set `bindHost: "0.0.0.0"` and add `extra_hosts` to Prometheus container |
+| Usage shows 0 for all models | Wait for next scan (30s) or check session files have `usage` in messages |
+| Metrics unreachable from Docker | Set `bindHost: "0.0.0.0"` in `http` config |
 | Sessions deleted unexpectedly | Set `archiveCorrupted: true` to rename instead of delete |
 | Grafana push fails | Check user/token/URLs in config; inspect `guardian.log` |
 
 ---
 
-## Logs
+## License
 
-Structured JSON at `~/.openclaw/guardian.log`:
-
-```json
-{"ts":"2026-03-19T12:40:15.359Z","level":"info","message":"Rate-limit headers","anthropic-ratelimit-unified-status":"allowed","anthropic-ratelimit-unified-5h-utilization":"0.44"}
-{"ts":"2026-03-19T12:00:00.000Z","level":"warn","message":"429 from Anthropic","attempt":0,"url":"/v1/messages"}
-{"ts":"2026-03-19T12:00:05.000Z","level":"warn","message":"Orphaned tool_use – removing","filePath":"...","orphaned":["toolu_01..."]}
-```
+MIT

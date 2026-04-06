@@ -1,14 +1,11 @@
 {
   "name": "openclaw-guardian",
-  "version": "1.0.0",
-  "description": "Rate-limit aware proxy + session healer for OpenClaw / Anthropic API",
+  "version": "2.0.0",
+  "description": "Session healer + usage tracker for OpenClaw",
   "keywords": [
-    "anthropic",
-    "claude",
     "openclaw",
-    "rate-limit",
-    "proxy",
     "session-healer",
+    "usage-tracker",
     "grafana",
     "prometheus",
     "loki",
@@ -20,9 +17,9 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "start":  "node bin/start.js",
-    "proxy":  "node bin/proxy.js",
     "healer": "node bin/healer.js",
-    "once":   "node bin/healer.js --once"
+    "once":   "node bin/healer.js --once",
+    "usage":  "node -e \"import('./src/usage.js').then(m => m.startUsageTracker())\""
   },
   "license": "MIT",
   "author": "Josef Kvapil (https://github.com/wraithyy)",
